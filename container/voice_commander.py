@@ -6,6 +6,7 @@ import time
 import base64
 import subprocess
 import requests
+import formatters
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Security, Request, Response, Depends
 from fastapi.security.api_key import APIKeyHeader, APIKey
 from fastapi.responses import Response
@@ -178,12 +179,22 @@ async def process_audio(request: Request):
             else:
                 cmd_out = success_msg  # O puedes poner: "Command executed (No output)"
 
+            # --- APLICAR FORMATTER SI ESTÁ CONFIGURADO ---
+            formatter_name = intent_data.get("formatter")
+            if formatter_name and hasattr(formatters, formatter_name):
+                formatter_func = getattr(formatters, formatter_name)
+                formatted_output = formatter_func(cmd_out)
+                # Escapar saltos de línea para el header HTTP para evitar Status = -1 en ESP32
+                cmd_out_header = str(formatted_output).replace("\n", "\\n").replace("\r", "")
+            else:
+                cmd_out_header = sanitize_header(cmd_out)
+
             audio_wav = generate_piper_tts_bytes(success_msg)
             headers = {
                 "X-Server-Status": "success",
                 "X-Transcription": sanitize_header(success_msg),
                 "X-Requires-Followup": "false",
-                "X-Cmd-Output": sanitize_header(cmd_out)
+                "X-Cmd-Output": cmd_out_header
             }
             return Response(content=audio_wav, media_type="audio/wav", headers=headers)
         else:
