@@ -1,0 +1,22 @@
+# 1. En el celular habilitar hotspot y desconectarte de wifi
+# 2. Habilitar tailscale
+# 3. Revisar que ESP32-S3-ePaper-1.54 se conecte a hotspot
+
+
+# 4. En la orange pi 6 plus (server) 
+# habilitar tailscale funnel:
+sudo tailscale funnel --bg 8000
+tailscale funnel status
+
+# en este directorio
+cd /home/orangepi/official-http-server-voice-commander/voice_commander2 
+docker compose restart voice_commander_app
+docker compose logs -f voice_commander_app
+
+# en otra terminal:
+
+cd  /home/orangepi/official-http-server-voice-commander/voice_commander2/host_broker
+python3 host_runner.py
+
+# ultimo paso
+# Prender ESP32-S3-ePaper, y mandar mensaje de audio

@@ -1,0 +1,22 @@
+{
+  "check_ram": {
+    "description": "Check available system RAM",
+    "command": "free -h"
+  },
+  "check_disk_space": {
+    "description": "Check system disk space",
+    "command": "df -h"
+  },
+  "list_movies": {
+    "description": "List movies in directory",
+    "command": "ls -1 $HOME/Videos 2>/dev/null || echo 'No movies found'"
+  },
+  "play_movie": {
+    "description": "Play selected movie using VLC",
+    "command": "vlc \"$HOME/Videos/{file_name}\" &"
+  },
+  "reboot_system": {
+    "description": "Simulated system reboot",
+    "command": "echo 'System reboot command authorized!'"
+  }
+}

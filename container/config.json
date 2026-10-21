@@ -1,0 +1,32 @@
+{
+  "vosk_model_path": "models/vosk-en",
+  "piper_voice_model": "voices/en_US-lessac-high.onnx",
+  "piper_binary": "/usr/local/bin/piper",
+
+  "commands": {
+    "check_ram": {
+      "phrases": ["check ram", "memory usage", "cuanta memoria tengo", "uso de ram"],
+      "command": "free -h",
+      "confirmation_prompt": "Do you want to check the system RAM memory?",
+      "success_message": "Here is the memory status report.",
+      "requires_confirmation": true
+    },
+    "check_disk_space": {
+      "phrases": ["check disk space", "check disk", "cuando espacio disco tengo", "disk space", "uso de espacio disco"],
+      "command": "df -h",
+      "confirmation_prompt": "Do you want to check the system disk space?",
+      "success_message": "Here is the disk space status report.",
+      "requires_confirmation": true
+    },
+    "list_movies": {
+      "phrases": ["list movies", "show my movies", "lista mis peliculas", "que peliculas tengo"],
+      "response": "Fetching your movies list.",
+      "sets_context": "movie_selection"
+    },
+    "reboot_system": {
+      "phrases": ["reboot system", "reiniciar sistema", "apagar equipo"],
+      "response": "Are you sure you want to reboot the host?",
+      "requires_confirmation": true
+    }
+  }
+}
