@@ -67,6 +67,30 @@ def format_disk_space(text: str) -> str:
         logger.error(f"Error parsing disk space output: {e}")
         return text.strip().replace("\n", " ")
 
+def format_ollama_response(text: str) -> str:
+    """
+    Formats raw text responses from Ollama by stripping Markdown syntax, 
+    collapsing line breaks into spaces, and ensuring single-line header compliance.
+    """
+    if not text:
+        logger.warning("format_ollama_response received empty input.")
+        return ""
+
+    try:
+        # Strip common markdown elements for clean display on e-Paper
+        cleaned = text.strip()
+        cleaned = cleaned.replace("**", "").replace("*", "").replace("`", "")
+        
+        # Replace newlines, carriage returns, and tabs with a single space
+        cleaned = " ".join(cleaned.split())
+
+        logger.debug("Successfully formatted Ollama response.")
+        return cleaned
+
+    except Exception as e:
+        logger.error(f"Error formatting Ollama response: {e}")
+        return sanitize_header(text)
+
 def sanitize_header(text: str) -> str:
     """Generic helper function to sanitize text intended for HTTP headers."""
     if not text:

@@ -7,16 +7,16 @@
     "description": "Check system disk space",
     "command": "df -h"
   },
-  "list_movies": {
-    "description": "List movies in directory",
-    "command": "ls -1 $HOME/Videos 2>/dev/null || echo 'No movies found'"
+  "update_epaper_screen_w_random_info": {
+    "description": "Update e-paper screen with random information",
+    "command": "ssh pi@192.168.1.12 '/home/pi/git/projects/waveshare-eink-pi-zero-photo-frame/run_on_cron_display_on_eink.sh info'"
   },
-  "play_movie": {
-    "description": "Play selected movie using VLC",
-    "command": "vlc \"$HOME/Videos/{file_name}\" &"
+  "update_epaper_screen_w_random_photo": {
+    "description": "Update e-paper screen with random photo",
+    "command": "ssh pi@192.168.1.12 '/home/pi/git/projects/waveshare-eink-pi-zero-photo-frame/run_on_cron_display_on_eink.sh photo'"
   },
-  "reboot_system": {
-    "description": "Simulated system reboot",
-    "command": "echo 'System reboot command authorized!'"
+  "ask_local_ai_text": {
+     "description": "Ask a question to local Ollama model",
+     "command": "ollama run gemma2:2b <argument>? Answer in one sentence." 
   }
 }

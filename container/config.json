@@ -10,16 +10,43 @@
       "formatter": "format_memory_status",
       "confirmation_prompt": "Do you want to check the system RAM memory?",
       "success_message": "Here is the memory status report.",
-      "requires_confirmation": true
+      "requires_confirmation": true,
+      "tts_output": false
     },
     "check_disk_space": {
-      "phrases": ["check disk space", "check disk", "cuando espacio disco tengo", "disk space", "uso de espacio disco"],
+      "phrases": ["check disk space", "check disk", "disk space usage"],
       "command": "df -h",
       "formatter": "format_disk_space",
       "confirmation_prompt": "Do you want to check the system disk space?",
       "success_message": "Here is the disk space status report.",
-      "requires_confirmation": true
+      "requires_confirmation": true,
+      "tts_output": false
+    },
+    "update_epaper_screen_w_random_info": {
+      "phrases": ["update information on e-paper screen", "update e-paper with info"],
+      "command": "ssh pi@192.168.1.12 '/home/pi/git/projects/waveshare-eink-pi-zero-photo-frame/run_on_cron_display_on_eink.sh info'",
+      "confirmation_prompt": "Do you want to update the e-paper screen with random infomation?",
+      "success_message": "I have sucessfully updated the e-paper screen with random information",
+      "requires_confirmation": true,
+      "tts_output": false
+    },
+    "update_epaper_screen_w_random_photo": {
+      "phrases": ["update photo on e-paper screen", "update e-paper with photo"],
+      "command": "ssh pi@192.168.1.12 '/home/pi/git/projects/waveshare-eink-pi-zero-photo-frame/run_on_cron_display_on_eink.sh photo'",
+      "confirmation_prompt": "Do you want to update the e-paper screen with random photo?",
+      "success_message": "I have sucessfully updated the e-paper screen with a random photo",
+      "requires_confirmation": true,
+      "tts_output": false
+    },
+    "ask_local_ai_text": {
+      "type": "prompt_input",
+      "phrases": ["Ask local artificial intelligence agent", "question to artificial intelligence"],
+      "command": "ollama run gemma2:2b <argument>? Answer in one sentence",
+      "formatter": "format_ollama_response",
+      "confirmation_prompt": "What do you want to ask to local artificial intelligence agent?",
+      "success_message": "Here is the response from Ollama.",
+      "requires_confirmation": false,
+      "tts_output": true
     }
   }
 }
-
