@@ -1,8 +1,11 @@
 {
-  "vosk_model_path": "models/vosk-en",
+  "vosk_model_path": "/app/models/vosk-en",
   "piper_voice_model": "voices/en_US-lessac-high.onnx",
   "piper_binary": "/usr/local/bin/piper",
-
+  "settings": {
+    "confirmation_words": ["yes", "do it", "confirm"],
+    "cancel_message": "Action Cancelled"
+  },
   "commands": {
     "check_ram": {
       "phrases": ["check ram", "memory usage", "cuanta memoria tengo", "uso de ram"],
