@@ -401,7 +401,9 @@ async def process_audio(request: Request):
             return Response(content=audio_wav, media_type="audio/wav", headers=headers)
 
     # --- 3. UNKNOWN INTENT FALLBACK ---
-    unknown_msg = "I did not understand what you wanted me to do."
+    unknown_msg = config_data.get("settings", {}).get(
+        "unknown_message", "I did not understand what you wanted me to do."
+    )
     logger.warning(f"Unrecognized intent from transcription: '{transcription}'")
     audio_wav = generate_piper_tts_bytes(unknown_msg)
     headers = {
