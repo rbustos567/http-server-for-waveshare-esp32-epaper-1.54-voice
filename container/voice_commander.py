@@ -54,17 +54,28 @@ async def verify_api_key(api_key: str = Security(api_key_header)):
     logger.warning("Unauthorized access attempt with invalid or missing API Key.")
     raise HTTPException(status_code=401, detail="Unauthorized: Invalid or missing API Key")
 
-MODEL_PATH = os.getenv("VOSK_MODEL_PATH", "/app/models/vosk-en")
+#MODEL_PATH = os.getenv("VOSK_MODEL_PATH", "/app/models/vosk-en")
 CONFIG_PATH = "config.json"
+
 HOST_RUNNER_URL = os.getenv("HOST_RUNNER_URL", "http://host.docker.internal:8001")
 HOST_API_TOKEN = os.getenv("HOST_API_TOKEN", "my_secure_voice_token_123")
 
-if not os.path.exists(MODEL_PATH):
-    logger.critical(f"Vosk model not found at path: {MODEL_PATH}")
-    raise FileNotFoundError(f"Vosk model not found at {MODEL_PATH}")
+#if not os.path.exists(MODEL_PATH):
+#    logger.critical(f"Vosk model not found at path: {MODEL_PATH}")
+#    raise FileNotFoundError(f"Vosk model not found at {MODEL_PATH}")
 
-logger.info(f"Loading Vosk model from {MODEL_PATH}...")
-vosk_model = Model(MODEL_PATH)
+#logger.info(f"Loading Vosk model from {MODEL_PATH}...")
+#vosk_model = Model(MODEL_PATH)
+
+CONFIG_PATH = "config.json"
+with open(CONFIG_PATH, "r") as f:
+    config_data = json.load(f)
+
+PIPER_MODEL_PATH = config_data.get("piper_voice_model", "/app/voices/en-US-lessac-high.onnx")
+PIPER_BINARY = config_data.get("piper_binary", "piper")
+VOSK_MODEL_PATH = config_data.get("vosk_model_path", "/app/models/vosk-en")
+logger.info(f"Vosk model not found at path: {VOSK_MODEL_PATH}")
+VOSK_MODEL = Model(VOSK_MODEL_PATH)
 
 with open(CONFIG_PATH, "r") as f:
     INTENTS_CONFIG = json.load(f).get("commands", {})
@@ -112,33 +123,46 @@ def get_session(session_id: str):
 def generate_piper_tts_bytes(text: str) -> bytes:
     """
     Generates raw binary WAV audio bytes using Piper TTS engine from text input securely,
-    writing text to a temporary file to avoid any shell quotation or stdin piping issues.
+    using the dynamic model path specified in config.json.
     """
-    try:
-        output_file = "/tmp/response.wav"
-        input_file = "/tmp/input_text.txt"
-        model_path = "/app/voices/en_US-lessac-high.onnx"
+    output_file = "/tmp/response.wav"
+    input_file = "/tmp/input_text.txt"
+    
+    # Usa la ruta del modelo definida en config.json
+    model_path = PIPER_MODEL_PATH  
+    
+    if not os.path.exists(model_path):
+        logger.error(f"CRITICAL: Piper TTS model file not found at '{model_path}'!")
+        return b""
 
-        # Write text safely to a temp file to prevent quote injection and stdin blocking
+    try:
         with open(input_file, "w", encoding="utf-8") as f:
             f.write(text)
 
-        # Use file redirection '<'. Since the text lives safely inside the file,
-        # quotes inside the text will never break the shell command syntax.
-        cmd = f"piper --model {model_path} --output_file {output_file} < {input_file}"
-        subprocess.run(cmd, shell=True, check=True)
+        cmd = f"{PIPER_BINARY} --model {model_path} --output_file {output_file} < {input_file}"
+        
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            logger.error(f"Piper execution failed (exit code {result.returncode}): {result.stderr.strip()}")
+            return b""
+
+        if not os.path.exists(output_file):
+            logger.error("Piper finished but output WAV file was not created.")
+            return b""
 
         with open(output_file, "rb") as f:
             return f.read()
+            
     except Exception as e:
-        logger.error(f"Error generating Piper TTS audio: {e}")
+        logger.error(f"Exception occurred while generating Piper TTS audio: {e}")
         return b""
 
 def transcribe_wav(audio_bytes: bytes) -> str:
     """
     Transcribes raw audio bytes into text using the Vosk offline speech recognition engine.
     """
-    recognizer = KaldiRecognizer(vosk_model, 16000)
+    recognizer = KaldiRecognizer(VOSK_MODEL, 16000)
     recognizer.SetWords(True)
     chunk_size = 4000
     text = ""
@@ -213,7 +237,13 @@ async def process_audio(request: Request):
         session["context"] = None
         session["pending_action"] = None
 
-        if any(w in text_lower for w in ["si", "hazlo", "yes", "sure", "confirm", "ok", "yeah", "do it"]):
+        valid_confirmation_words = config_data.get("settings", {}).get(
+            "confirmation_words", ["sure", "ok"]
+        )
+
+        logger.info(f"🔍 DEBUG -> Palabras válidas cargadas: {valid_confirmation_words} | Transcripción recibida: '{text_lower}'")
+
+        if any(w in text_lower for w in valid_confirmation_words):
             logger.info(f"✅ Confirmation accepted for direct command: {pending_cmd}")
             exec_params = {} # Direct commands have no dynamic arguments
             
@@ -247,7 +277,7 @@ async def process_audio(request: Request):
             return Response(content=audio_wav, media_type="audio/wav", headers=headers)
         else:
             logger.info("❌ Action cancelled by user.")
-            cancel_msg = "Action cancelled."
+            cancel_msg = config_data.get("settings", {}).get("cancel_message", "Action cancelled.")
             audio_wav = generate_piper_tts_bytes(cancel_msg)
             headers = {
                 "X-Server-Status": "cancelled",
