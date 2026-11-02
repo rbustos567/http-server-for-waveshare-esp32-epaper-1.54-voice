@@ -25,7 +25,7 @@ This repository contains the backend components for the Voice Commander project,
 Clone the project to your local machine or single-board computer (such as an Orange Pi 6 plus):
 
 ```bash
-git clone [git@github.com:rbustos567/http-server-for-waveshare-esp32-epaper-1.54-voice.git](https://github.com/rbustos567/http-server-for-waveshare-esp32-epaper-1.54-voice.git)
+git clone https://github.com/rbustos567/http-server-for-waveshare-esp32-epaper-1.54-voice.git
 cd http-server-for-waveshare-esp32-epaper-1.54-voice
 ```
 
