@@ -88,3 +88,50 @@ sudo systemctl daemon-reload
 sudo systemctl enable host_runner.service
 sudo systemctl start host_runner.service
 ```
+# Adding New Commands
+
+To add a new custom voice command to the system, you need to update both the backend container configurations and the host broker definitions. Follow these steps:
+
+## Step 1: Define the Command in the Host Broker
+Add your command execution logic in host_broker/commands_config.json. The key you choose here will act as the unique identifier for the command.
+
+```bash
+{
+  "your_command_key": {
+    "description": "Description of what the command does",
+    "command": "your_actual_terminal_command_here"
+  }
+}
+```
+## Step 2: Configure the Intent in the Container
+Open container/config.json and add a matching entry under the "commands" object. The key must exactly match the one defined in commands_config.json.   
+
+```bash
+"commands": {
+  "your_command_key": {
+    "phrases": ["phrase one to trigger", "alternative phrase"],
+    "command": "your_actual_terminal_command_here",
+    "formatter": "your_formatter_function_name",
+    "confirmation_prompt": "Do you want to run this command?",
+    "success_message": "Command executed successfully.",
+    "requires_confirmation": true,
+    "tts_output": false
+  }
+}
+```
+## Step 3: Implement a Custom Formatter (Optional)
+If your command requires custom text parsing or formatting for the output display, you must implement the formatter function inside container/formatters.py.   
+Open container/formatters.py and define your function matching the name specified in container/config.json:
+
+```bash
+def your_formatter_function_name(raw_output: str) -> str:
+    # Process or parse the raw command output string here
+    formatted_output = raw_output.strip()
+    return formatted_output
+```
+Once these three steps are completed, rebuild and restart your container to apply the changes:
+
+```bash
+docker compose build
+docker compose up -d
+```
