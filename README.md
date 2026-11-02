@@ -11,7 +11,20 @@ This repository contains the backend components for the Voice Commander project,
 
 ---
 
-## Prerequisites
+## Hardware Requirements
+
+The backend server is designed to run efficiently via CPU inference for Vosk STT, Piper TTS, and Sentence-Transformers. A dedicated NVIDIA GPU is **not strictly required** to run the system, although the Python environment includes CUDA-enabled packages (such as PyTorch) which automatically fall back to CPU processing if no compatible GPU is present.
+
+* **Processor (CPU):** 
+  * Minimum: Dual-core CPU (x86_64 or aarch64 / ARM64 like Raspberry Pi 5).
+  * Recommended: Quad-core CPU or higher (e.g., modern x86 processors or Raspberry Pi 5) for fast, real-time transcription and speech synthesis.
+* **Memory (RAM):** 
+  * Minimum: 2 GB of available RAM.
+  * Recommended: 4 GB+ of RAM to ensure smooth concurrent handling of Docker, Python models (Vosk/Transformers), and OS processes.
+* **Storage:** 
+  * At least 2 GB to 3 GB of free disk space for Docker images, dependencies, and language/audio models. (An NVMe SSD is strongly recommended if running on single-board computers like the Raspberry Pi 5).
+
+## Software Prerequisites
 
 - **Docker & Docker Compose** installed on your system.
 - **Python 3.10+** installed on the host machine.
