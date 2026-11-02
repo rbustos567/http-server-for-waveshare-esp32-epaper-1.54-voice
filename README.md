@@ -22,7 +22,7 @@ The backend server is designed to run efficiently via CPU inference for Vosk STT
   * Minimum: 2 GB of available RAM.
   * Recommended: 4 GB+ of RAM to ensure smooth concurrent handling of Docker, Python models (Vosk/Transformers), and OS processes.
 * **Storage:** 
-  * At least 2 GB to 3 GB of free disk space for Docker images, dependencies, and language/audio models. (An NVMe SSD is strongly recommended if running on single-board computers like the Raspberry Pi 5).
+  * At least 8 GB of free disk space for Docker images, dependencies, and language/audio models. (An NVMe SSD is strongly recommended if running on single-board computers like the Raspberry Pi 5).
 
 ## Software Prerequisites
 
