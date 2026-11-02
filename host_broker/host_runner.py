@@ -65,8 +65,8 @@ def execute_command(req: ExecRequest, authorization: str = Header(None)):
 
     logger.info(f"⚡ Executing host command: {cmd}")
     try:
-        # Increased timeout to 60s to support heavy local model runs (e.g., Ollama / LLMs)
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
+        # Increased timeout to 5 mins to support heavy local model runs (e.g., Ollama / LLMs)
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=300)
         output = result.stdout.strip() if result.returncode == 0 else result.stderr.strip()
 
         logger.info(f"📄 Raw output obtained:\n{output}")
@@ -77,7 +77,7 @@ def execute_command(req: ExecRequest, authorization: str = Header(None)):
             "output": output
         }
     except subprocess.TimeoutExpired:
-        logger.error(f"Command execution timed out after 60 seconds: {cmd}")
+        logger.error(f"Command execution timed out after 5 mins: {cmd}")
         raise HTTPException(status_code=504, detail="Command execution timed out.")
     except Exception as e:
         logger.error(f"Exception occurred while executing command '{key}': {e}")
