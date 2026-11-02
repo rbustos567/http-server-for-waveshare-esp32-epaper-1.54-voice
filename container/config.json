@@ -4,7 +4,9 @@
   "piper_binary": "/usr/local/bin/piper",
   "settings": {
     "confirmation_words": ["yes", "do it", "confirm"],
-    "cancel_message": "Action Cancelled"
+    "sucess_message": "Action successfully executed.",
+    "cancel_message": "Action Cancelled.",
+    "unknow_message": "I did not understand what you wanted me to do."
   },
   "commands": {
     "check_ram": {
