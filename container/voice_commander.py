@@ -54,18 +54,10 @@ async def verify_api_key(api_key: str = Security(api_key_header)):
     logger.warning("Unauthorized access attempt with invalid or missing API Key.")
     raise HTTPException(status_code=401, detail="Unauthorized: Invalid or missing API Key")
 
-#MODEL_PATH = os.getenv("VOSK_MODEL_PATH", "/app/models/vosk-en")
 CONFIG_PATH = "config.json"
 
 HOST_RUNNER_URL = os.getenv("HOST_RUNNER_URL", "http://host.docker.internal:8001")
 HOST_API_TOKEN = os.getenv("HOST_API_TOKEN", "my_secure_voice_token_123")
-
-#if not os.path.exists(MODEL_PATH):
-#    logger.critical(f"Vosk model not found at path: {MODEL_PATH}")
-#    raise FileNotFoundError(f"Vosk model not found at {MODEL_PATH}")
-
-#logger.info(f"Loading Vosk model from {MODEL_PATH}...")
-#vosk_model = Model(MODEL_PATH)
 
 CONFIG_PATH = "config.json"
 with open(CONFIG_PATH, "r") as f:
@@ -241,7 +233,7 @@ async def process_audio(request: Request):
             "confirmation_words", ["sure", "ok"]
         )
 
-        logger.info(f"🔍 DEBUG -> Palabras válidas cargadas: {valid_confirmation_words} | Transcripción recibida: '{text_lower}'")
+        logger.info(f"🔍 DEBUG -> Valided words loaded: {valid_confirmation_words} | Transcripción recibida: '{text_lower}'")
 
         if any(w in text_lower for w in valid_confirmation_words):
             logger.info(f"✅ Confirmation accepted for direct command: {pending_cmd}")
