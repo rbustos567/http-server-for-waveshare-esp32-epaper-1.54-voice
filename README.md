@@ -205,7 +205,7 @@ def your_formatter_function_name(raw_output: str) -> str:
     return formatted_output
 ```
 
-## Step 5: Rebuild and Restart the Container
+## Step 5: Restart the Container
 To apply the changes and ensure the container loads the new configuration and launch the Docker service:
 
 ```bash
