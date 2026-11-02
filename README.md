@@ -1,5 +1,7 @@
 # HTTP Server For Waveshare ESP32-S3-ePaper-1.54 (Voice Commander Server)
 
+The system operates through a split architecture: on one side, a Docker container serves as the core AI engine via a FastAPI REST API, dynamically integrating speech recognition (Vosk STT) and speech synthesis (Piper TTS). On the other side, an executable script on the host operating system (host_runner) acts as a secure intermediary to execute terminal commands, manage persistent states, and control local or networked physical hardware. This design allows users to issue voice commands from the **Microcontroller:** Developed for the [ESP32-ePaper-Client Repository]([https://github.com/tu_usuario/tu-repositorio-microcontrolador](https://github.com/rbustos567/waveshare-esp32-epaper-1.54-voice-client.git)) running firmware under ESP-IDF., which are transcribed, validated, and translated into real actions on the system, returning visual or synthesized feedback.
+
 This repository contains the backend components for the Voice Commander project, split into two main parts:
 1. **Docker Container (`container/`)**: Runs the FastAPI AI engine, Vosk STT, and Piper TTS.
 2. **Host Broker (`host_broker/`)**: Runs `host_runner.py` directly on the host operating system to execute local system commands and hardware integrations.
