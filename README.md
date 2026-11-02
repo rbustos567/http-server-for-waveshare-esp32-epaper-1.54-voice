@@ -135,12 +135,14 @@ def your_formatter_function_name(raw_output: str) -> str:
     formatted_output = raw_output.strip()
     return formatted_output
 ```
-Once these three steps are completed, rebuild and restart your container to apply the changes:
+Once these three steps are completed, restart your container to apply the changes:
 
 ```bash
-docker compose build
-docker compose up -d
+docker compose restart
+# or
+docker compose restart app
 ```
+
 # Switching to Spanish and Adding Spanish Commands
 The system includes built-in Spanish support via a dedicated configuration template. Follow these steps to activate it and add your custom Spanish commands:
 
@@ -191,9 +193,10 @@ def your_formatter_function_name(raw_output: str) -> str:
 ```
 
 ## Step 5: Rebuild and Restart the Container
-To apply the changes and ensure the container loads the new configuration, rebuild and launch the Docker service:
+To apply the changes and ensure the container loads the new configuration and launch the Docker service:
 
 ```bash
-docker compose build
-docker compose up -d
+docker compose restart
+# or
+docker compose restart app
 ```
