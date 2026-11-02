@@ -4,6 +4,7 @@
   "piper_binary": "/usr/local/bin/piper",
   "settings": {
     "confirmation_words": ["si", "sí", "hazlo", "confirmo"],
+    "sucess_message": "Accion executada exitosamente."
     "cancel_message": "Accion cancelada.",
     "unknown_message": "No entendí lo que querías que hiciera."
   },
