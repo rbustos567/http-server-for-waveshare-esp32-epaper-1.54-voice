@@ -135,3 +135,59 @@ Once these three steps are completed, rebuild and restart your container to appl
 docker compose build
 docker compose up -d
 ```
+# Switching to Spanish and Adding Spanish Commands
+The system includes built-in Spanish support via a dedicated configuration template. Follow these steps to activate it and add your custom Spanish commands:
+
+## Step 1: Enable the Spanish Configuration File
+Rename the Spanish backup configuration file (container/config.json.es) so that the container uses it as its primary configuration (container/config.json):
+
+```bash
+mv container/config.json.es container/config.json
+```
+
+## Step 2: Define the Command in the Host Broker
+Ensure that the command you want to execute is registered in the corresponding host configuration file (host_broker/commands_config.json):
+
+```bash
+{
+  "tu_comando_en_espanol": {
+    "description": "Description of what the command does",
+    "command": "your_terminal_command_here"
+  }
+}
+```
+
+## Step 3: Configure the Intent in the Container
+Open container/config.json and add or modify the entry under the "commands" object. The key must exactly match the one defined in the host broker:
+
+```bash
+"commands": {
+  "tu_comando_en_espanol": {
+    "phrases": ["spanish phrase one", "alternative phrase to trigger"],
+    "command": "your_terminal_command_here",
+    "formatter": "your_formatter_function_name",
+    "confirmation_prompt": "Do you want to run this command?",
+    "success_message": "Command executed successfully.",
+    "requires_confirmation": true,
+    "tts_output": false
+  }
+}
+```
+
+## Step 4: Implement a Custom Formatter (Optional)
+If you need to process the command output before displaying or synthesizing it, implement the function inside container/formatters.py using the exact name specified in the JSON:
+
+```bash
+def your_formatter_function_name(raw_output: str) -> str:
+    # Process or format the text output here
+    formatted_output = raw_output.strip()
+    return formatted_output
+```
+
+## Step 5: Rebuild and Restart the Container
+To apply the changes and ensure the container loads the new configuration, rebuild and launch the Docker service:
+
+```bash
+docker compose build
+docker compose up -d
+```
