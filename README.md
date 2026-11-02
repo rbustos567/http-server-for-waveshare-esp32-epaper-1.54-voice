@@ -212,4 +212,6 @@ To apply the changes and ensure the container loads the new configuration and la
 docker compose restart
 # or
 docker compose restart app
+# Check logs in real time
+docker compose logs -f voice_commander_app
 ```
