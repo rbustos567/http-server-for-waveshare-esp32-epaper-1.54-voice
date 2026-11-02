@@ -177,7 +177,7 @@ def call_host_broker(command_key: str, params: dict = {}):
     payload = {"command_key": command_key, "params": params}
     try:
         logger.info(f"Dispatching command to host broker: {command_key}")
-        res = requests.post(f"{HOST_RUNNER_URL}/exec", json=payload, headers=headers, timeout=40)
+        res = requests.post(f"{HOST_RUNNER_URL}/exec", json=payload, headers=headers, timeout=300)
         return res.json()
     except Exception as e:
         logger.error(f"Failed to communicate with host runner broker: {e}")
