@@ -106,6 +106,8 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload
 sudo systemctl enable host_runner.service
 sudo systemctl start host_runner.service
+# Check is working correcty
+sudo systemctl status host_runner.service
 ```
 # Adding New Commands
 
