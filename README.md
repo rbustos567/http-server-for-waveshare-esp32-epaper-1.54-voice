@@ -15,6 +15,7 @@ This repository contains the backend components for the Voice Commander project,
 - Ports **8000** (Docker API) and **8001** (Host Runner) available.
 
 ---
+# Installation
 
 ## Step 1: Clone the Repository
 
