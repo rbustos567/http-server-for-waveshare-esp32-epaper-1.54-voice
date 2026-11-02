@@ -33,6 +33,8 @@ docker compose up --build -d
 3. Verify that the container is running properly:
 ```bash
 docker ps
+# (Optional) Check logs in real time:
+docker compose logs -f voice_commander_app
 ```
 
 ## Step 3: Run the Host Runner (host_runner.py)
