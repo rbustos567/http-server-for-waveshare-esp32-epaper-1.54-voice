@@ -15,6 +15,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from vosk import Model, KaldiRecognizer
 from sentence_transformers import SentenceTransformer, util
 
+# Session timeout in seconds
+SESSION_TIMEOUT = 60
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -99,14 +102,15 @@ def sanitize_header(text: str) -> str:
 def get_session(session_id: str):
     """
     Retrieves or initializes an active user session state based on session_id.
-    Automatically expires and resets sessions inactive for more than 60 seconds.
+    Automatically expires and resets sessions inactive for more than SESSION_TIMEOUT seconds.
     """
     now = time.time()
-    if session_id not in SESSIONS or (now - SESSIONS[session_id]["timestamp"]) > 60:
+    if session_id not in SESSIONS or (now - SESSIONS[session_id]["timestamp"]) > SESSION_TIMEOUT:
         logger.info(f"Creating or resetting session state for ID: {session_id}")
         SESSIONS[session_id] = {
             "context": None,
             "pending_action": None,
+            "followup_action": None,
             "timestamp": now
         }
     SESSIONS[session_id]["timestamp"] = now
@@ -241,6 +245,7 @@ async def process_audio(request: Request):
             
             # --- COMMON EXECUTION & FORMATTING BLOCK ---
             exec_res = call_host_broker(pending_cmd, params=exec_params)
+            logger.info(f"🔍 DEBUG HOST_RES -> {exec_res}")
             intent_data = INTENTS_CONFIG.get(pending_cmd, {})
             success_msg = intent_data.get("success_message", "Command executed successfully.")
             host_output = exec_res.get("output", "")
@@ -253,6 +258,21 @@ async def process_audio(request: Request):
                 cmd_out_header = str(formatter_func(cmd_out)).replace("\n", " ").replace("\r", "")
             else:
                 cmd_out_header = sanitize_header(cmd_out)
+            
+            # Check if there is a followup next_action
+            next_action = intent_data.get("next_action")
+            requires_followup_header = "false"
+            
+            if next_action:
+                session["context"] = "awaiting_confirmation"
+                session["pending_action"] = next_action
+                requires_followup_header = "true"
+                
+                next_intent_data = INTENTS_CONFIG.get(next_action, {})
+                followup_prompt = next_intent_data.get("confirmation_prompt", "Do you want to continue?")
+                success_msg = f"{success_msg}. {followup_prompt}"
+
+                cmd_out_header = f"{cmd_out_header} | {followup_prompt}"
 
             # 2. Determine Speech Payload (TTS Output Config)
             should_speak_output = intent_data.get("tts_output", False)
@@ -263,7 +283,7 @@ async def process_audio(request: Request):
             headers = {
                 "X-Server-Status": "success",
                 "X-Transcription": sanitize_header(success_msg),
-                "X-Requires-Followup": "false",
+                "X-Requires-Followup": requires_followup_header,
                 "X-Cmd-Output": cmd_out_header
             }
             return Response(content=audio_wav, media_type="audio/wav", headers=headers)
@@ -383,11 +403,30 @@ async def process_audio(request: Request):
             else:
                 cmd_out_header = sanitize_header(cmd_out)
 
+            next_action = intent_data.get("next_action")
+            requires_followup_header = "false"
+            
+            # Check if there is a followup next_action
+            if next_action:
+                session["context"] = "awaiting_confirmation"
+                session["pending_action"] = next_action
+                requires_followup_header = "true"
+                
+                next_intent_data = INTENTS_CONFIG.get(next_action, {})
+                followup_prompt = next_intent_data.get("confirmation_prompt", "Do you want to continue?")
+                success_msg = f"{success_msg}. {followup_prompt}"
+
+                cmd_out_header = f"{cmd_out_header} | {followup_prompt}"
+
+            # 2. Determine Speech Payload
+            should_speak_output = intent_data.get("tts_output", False)
+            speech_text = cmd_out_header if should_speak_output else success_msg
+
             audio_wav = generate_piper_tts_bytes(success_msg)
             headers = {
                 "X-Server-Status": "success",
                 "X-Transcription": sanitize_header(success_msg),
-                "X-Requires-Followup": "false",
+                "X-Requires-Followup": requires_followup_header,
                 "X-Cmd-Output": cmd_out_header
             }
             return Response(content=audio_wav, media_type="audio/wav", headers=headers)
