@@ -7,8 +7,28 @@
     "sucess_message": "Action successfully executed.",
     "cancel_message": "Action Cancelled.",
     "unknow_message": "I did not understand what you wanted me to do."
+    "word_to_num": {
+    "first": "1", "one": "1",
+    "second": "2", "two": "2",
+    "thrid": "3", "three": "3",
+    "fourth": "4", "four": "4"
+  }    
   },
   "commands": {
+    "search_piratebay_torrent": {
+      "phrases": ["Look for torrents", "Torrents in piratebay"],
+      "type": "prompt_input",
+      "confirmation_prompt": "Do you want to search for torrents in piratebay? What would you like to search?",
+      "success_message": "Here are the results of the torrents found. Which one do you want to download?",
+      "output_type": "indexed_hash",
+      "requires_confirmation": true,
+      "tts_output": false,
+      "vosk_model_path": "/app/models/vosk-en",
+      "selection_action": "download_torrent"
+    },
+    "download_torrent": {
+      "success_message": "Torrent download successfully started." 
+    },
     "check_ram": {
       "phrases": ["check ram", "memory usage", "cuanta memoria tengo", "uso de ram"],
       "formatter": "format_memory_status",
