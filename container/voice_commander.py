@@ -68,9 +68,12 @@ with open(CONFIG_PATH, "r") as f:
 
 PIPER_MODEL_PATH = config_data.get("piper_voice_model", "/app/voices/en-US-lessac-high.onnx")
 PIPER_BINARY = config_data.get("piper_binary", "piper")
-VOSK_MODEL_PATH = config_data.get("vosk_model_path", "/app/models/vosk-en")
-logger.info(f"Vosk model not found at path: {VOSK_MODEL_PATH}")
-VOSK_MODEL = Model(VOSK_MODEL_PATH)
+DEFAULT_VOSK_PATH = config_data.get("vosk_model_path", "/app/models/vosk-en")
+
+# Cache dictionary to store loaded Vosk models in memory
+VOSK_MODELS_CACHE = {
+    "default": Model(DEFAULT_VOSK_PATH)
+}
 
 with open(CONFIG_PATH, "r") as f:
     INTENTS_CONFIG = json.load(f).get("commands", {})
@@ -97,7 +100,24 @@ def sanitize_header(text: str) -> str:
     """
     if not text:
         return ""
-    return str(text).replace("\n", " ").replace("\r", " ").replace("\t", " ")
+    # Clean whitespace characters first
+    cleaned = str(text).replace("\n", " ").replace("\r", " ").replace("\t", " ")
+    # Strip characters that latin-1 headers cannot encode
+    return cleaned.encode("ascii", "ignore").decode("ascii")
+
+def get_vosk_model(model_path: str):
+    """Load and cache Vosk models dynamically based on the provided path."""
+    if not model_path:
+        logger.info("DEBUG ---> get_vosk_model: No path provided, falling back to default.")
+        return VOSK_MODELS_CACHE["default"]
+    
+    if model_path not in VOSK_MODELS_CACHE:
+        logger.info(f"Loading alternative Vosk model: {model_path}")
+        VOSK_MODELS_CACHE[model_path] = Model(model_path)
+    else:
+        logger.info(f"DEBUG ---> get_vosk_model: Reusing cached model for path: {model_path}")
+        
+    return VOSK_MODELS_CACHE[model_path]
 
 def get_session(session_id: str):
     """
@@ -110,6 +130,8 @@ def get_session(session_id: str):
         SESSIONS[session_id] = {
             "context": None,
             "pending_action": None,
+            "pending_options": {},
+            "selection_action": None,
             "followup_action": None,
             "timestamp": now
         }
@@ -154,11 +176,11 @@ def generate_piper_tts_bytes(text: str) -> bytes:
         logger.error(f"Exception occurred while generating Piper TTS audio: {e}")
         return b""
 
-def transcribe_wav(audio_bytes: bytes) -> str:
+def transcribe_wav(audio_bytes: bytes, vosk_model) -> str:
     """
     Transcribes raw audio bytes into text using the Vosk offline speech recognition engine.
     """
-    recognizer = KaldiRecognizer(VOSK_MODEL, 16000)
+    recognizer = KaldiRecognizer(vosk_model, 16000)
     recognizer.SetWords(True)
     chunk_size = 4000
     text = ""
@@ -187,6 +209,239 @@ def call_host_broker(command_key: str, params: dict = {}):
         logger.error(f"Failed to communicate with host runner broker: {e}")
         return {"status": "error", "output": str(e)}
 
+# --- STATE HANDLERS (Modular State Machine) ---
+
+def handle_idle_state(session, transcription, text_lower, intent_data, cmd_key):
+    """Handles commands received in idle state (direct or prompt_input)."""
+    cmd_type = intent_data.get("type", "direct")
+    requires_conf = intent_data.get("requires_confirmation", True)
+
+    if cmd_type == "prompt_input":
+        # Transition to awaiting_prompt state
+        session["context"] = "awaiting_prompt"
+        session["pending_action"] = cmd_key
+        prompt_msg = intent_data.get("confirmation_prompt", "What do you want to ask?")
+        return create_system_response("awaiting_prompt", prompt_msg, "true", prompt_msg)
+
+    elif cmd_type == "direct" and requires_conf:
+        # Transition to awaiting_confirmation state
+        session["context"] = "awaiting_confirmation"
+        session["pending_action"] = cmd_key
+        conf_msg = intent_data.get("confirmation_prompt", f"Do you want to execute {cmd_key}?")
+        return create_system_response("awaiting_confirmation", conf_msg, "true", conf_msg)
+
+    else:
+        # Execute direct command immediately without confirmation
+        return execute_and_render_command(cmd_key, params={}, session=session)
+
+def handle_awaiting_confirmation(session, transcription, text_lower):
+    """Handles confirmation response for direct commands."""
+    pending_cmd = session.get("pending_action")
+    session["context"] = None
+    session["pending_action"] = None
+
+    valid_conf_words = config_data.get("settings", {}).get("confirmation_words", ["sure", "ok"])
+    
+    if any(w in text_lower for w in valid_conf_words):
+        logger.info(f"Confirmation accepted for command: {pending_cmd}")
+        return execute_and_render_command(pending_cmd, params={}, session=session)
+    else:
+        logger.info("Action cancelled by user.")
+        cancel_msg = config_data.get("settings", {}).get("cancel_message", "Action cancelled.")
+        return create_system_response("cancelled", cancel_msg, "false", cancel_msg)
+
+def handle_awaiting_prompt(session, transcription, text_lower):
+    """Handles dynamic argument input from speech."""
+    pending_cmd = session.get("pending_action")
+    session["context"] = None
+    session["pending_action"] = None
+
+    user_argument = transcription
+    logger.info(f"Executing prompt_input command '{pending_cmd}' with argument: '{user_argument}'")
+    
+    exec_params = {"argument": user_argument}
+    return execute_and_render_command(pending_cmd, params=exec_params, session=session)
+
+def handle_awaiting_list_selection(session, transcription, text_lower):
+    """Handles user selection from an indexed options list (e.g., torrents)."""
+    selection_action = session.get("selection_action")
+    options_map = session.get("pending_options", {})
+    
+    # Clear selection state
+    session["context"] = None
+    session["selection_action"] = None
+    session["pending_options"] = {}
+
+    # Extract number from speech (digits or words)
+    import re
+    match = re.search(r'\d+', text_lower)
+    selected_key = match.group() if match else None
+    
+    if not selected_key:
+        word_to_num = config_data.get("settings", {}).get("word_to_num", {
+            "first": "1", "one": "1",
+            "second": "2", "two": "2"
+        })
+
+        for word, num in word_to_num.items():
+            if word in text_lower:
+                selected_key = num
+                break
+
+    if selected_key and selected_key in options_map:
+        chosen_value = options_map[selected_key]
+        logger.info(f"Selection accepted: index '{selected_key}' -> value '{chosen_value}'")
+        
+        exec_params = {"argument": chosen_value}
+        return execute_and_render_command(selection_action, params=exec_params, session=session)
+    else:
+
+        unknown_msg = config_data.get("settings", {}).get("unknown_message", "I did not understand what you wanted me to do.")
+        logger.warning(f"Unrecognized intent from transcription: '{transcription}'")
+        return create_system_response("unknown_intent", unknown_msg, "false", "Command not recognized.")
+
+def create_system_response(status: str, transcription: str, requires_followup: str, cmd_output: str, audio_bytes: bytes = None):
+    """Helper to build standardized FastAPI Responses for system messages or errors."""
+    headers = {
+        "X-Server-Status": status,
+        "X-Transcription": sanitize_header(transcription),
+        "X-Requires-Followup": requires_followup,
+        "X-Cmd-Output": sanitize_header(cmd_output)
+    }
+    
+    # If no pre-generated audio bytes are passed, generate TTS audio from transcription
+    if audio_bytes is None:
+        audio_bytes = generate_piper_tts_bytes(transcription if transcription else "Done")
+        
+    return Response(content=audio_bytes, media_type="audio/wav", headers=headers)
+
+def process_incoming_audio(audio_bytes: bytes, vosk_model = None):
+    """Transcribes audio bytes and handles empty speech edge cases."""
+    if not audio_bytes:
+        return None, "No audio or speech detected."
+   
+    # If no specific model is passed, fall back to the global default
+    if vosk_model is None:
+        vosk_model = VOSK_MODELS_CACHE["default"]
+
+    transcription = transcribe_wav(audio_bytes, vosk_model)
+    logger.info(f"Transcription received: '{transcription}'")
+    
+    if not transcription:
+        return None, "No audio or speech detected."
+        
+    return transcription, None
+
+def handle_prompt_input_intent(session, cmd_key, intent_data):
+    """Handles commands requiring dynamic argument input from voice."""
+    session["context"] = "awaiting_prompt"
+    session["pending_action"] = cmd_key
+
+    prompt_msg = intent_data.get("confirmation_prompt", "What do you want to ask?")
+    logger.info(f"Prompt-input intent detected: {cmd_key}. Requesting argument...")
+    
+    return create_system_response("awaiting_prompt", prompt_msg, "true", prompt_msg)
+
+def handle_confirmation_intent(session, cmd_key, intent_data):
+    """Handles direct commands that require user confirmation before execution."""
+    session["context"] = "awaiting_confirmation"
+    session["pending_action"] = cmd_key
+    
+    conf_msg = intent_data.get("confirmation_prompt", f"Do you want to execute {cmd_key}?")
+    logger.info(f"Direct intent with confirmation detected: {cmd_key}.")
+    
+    return create_system_response("awaiting_confirmation", conf_msg, "true", conf_msg)
+
+def handle_immediate_execution_intent(session, cmd_key, intent_data):
+    """Handles direct commands executed immediately without confirmation."""
+    logger.info(f"Direct intent without confirmation. Executing immediately: {cmd_key}")
+    
+    return execute_and_render_command(cmd_key, params={}, session=session)
+
+def handle_command_intent(session, cmd_key, intent_data):
+    """Handles routing when a new intent is matched from speech in idle state."""
+    cmd_type = intent_data.get("type", "direct")
+    requires_conf = intent_data.get("requires_confirmation", True)
+    
+    # CASE 1: Command requires a dynamic prompt input (e.g. argument capture)
+    if cmd_type == "prompt_input":
+        return handle_prompt_input_intent(session, cmd_key, intent_data)
+    # CASE 2: Direct Command WITH Confirmation Required
+    elif cmd_type == "direct" and requires_conf:
+        return handle_confirmation_intent(session, cmd_key, intent_data)
+    # CASE 3: Direct Command WITHOUT Confirmation (Execute immediately)
+    else:
+        return handle_immediate_execution_intent(session, cmd_key, intent_data)
+
+def execute_and_render_command(cmd_key: str, params: dict, session: dict):
+    """Executes a command via host broker, applies formatters or indexed hash logic, and returns response."""
+    exec_res = call_host_broker(cmd_key, params=params)
+    logger.info(f"DEBUG HOST_RES -> {exec_res}")
+    
+    intent_data = INTENTS_CONFIG.get(cmd_key, {})
+    success_msg = intent_data.get("success_message", "Command executed successfully.")
+    host_output = exec_res.get("output", "")
+    
+    output_type = intent_data.get("output_type")
+    requires_followup_header = "false"
+
+    if output_type == "indexed_hash":
+        # Handle interactive list options (e.g., torrent search)
+        parsed_json = None
+        try:
+            if host_output and host_output.strip().startswith("{"):
+                parsed_json = json.loads(host_output)
+        except Exception:
+            pass
+
+        if parsed_json and isinstance(parsed_json, dict):
+            display_text = sanitize_header(parsed_json.get("display_text", ""))
+            session["pending_options"] = parsed_json.get("options", {})
+            session["selection_action"] = intent_data.get("selection_action")
+            session["context"] = "awaiting_list_selection"
+            requires_followup_header = "true"
+            
+            cmd_out_header = f"{display_text} | {success_msg}"
+        else:
+            cmd_out_header = sanitize_header(host_output)
+    else:
+        # Standard text output handling
+        cmd_out = host_output if (host_output and host_output.strip() != "") else success_msg
+
+        formatter_name = intent_data.get("formatter")
+        if formatter_name and hasattr(formatters, formatter_name):
+            formatter_func = getattr(formatters, formatter_name)
+            cmd_out_header = str(formatter_func(cmd_out)).replace("\n", " ").replace("\r", "")
+        else:
+            cmd_out_header = sanitize_header(cmd_out)
+
+        # Check for followup next_action
+        next_action = intent_data.get("next_action")
+        if next_action:
+            session["context"] = "awaiting_confirmation"
+            session["pending_action"] = next_action
+            requires_followup_header = "true"
+
+            next_intent_data = INTENTS_CONFIG.get(next_action, {})
+            followup_prompt = next_intent_data.get("confirmation_prompt", "Do you want to continue?")
+            success_msg = f"{success_msg}. {followup_prompt}"
+            cmd_out_header = f"{cmd_out_header} | {followup_prompt}"
+
+    # Determine speech payload
+    should_speak_output = intent_data.get("tts_output", False)
+    speech_text = cmd_out_header if should_speak_output else success_msg
+
+    logger.info(f"Generating TTS audio (speaking output: {should_speak_output})")
+    audio_wav = generate_piper_tts_bytes(speech_text)
+
+    return create_system_response(
+        status="success",
+        transcription=success_msg,
+        requires_followup=requires_followup_header,
+        cmd_output=cmd_out_header,
+        audio_bytes=audio_wav
+    )
+
 @app.post("/process-audio", dependencies=[Depends(verify_api_key)])
 async def process_audio(request: Request):
     """
@@ -196,149 +451,43 @@ async def process_audio(request: Request):
     audio_bytes = await request.body()
     comm_status = request.headers.get("X-Communication-Status", "active")
 
+    # Handle session close or empty buffer
     if comm_status == "final" or len(audio_bytes) == 0:
         logger.info("Session closed or empty audio buffer received.")
-        empty_headers = {
-            "X-Server-Status": "closed",
-            "X-Transcription": "",
-            "X-Requires-Followup": "false",
-            "X-Cmd-Output": "Session closed."
-        }
-        return Response(content=b"", media_type="audio/wav", headers=empty_headers)
+        return create_system_response("closed", "", "false", "Session closed.")
 
-    transcription = transcribe_wav(audio_bytes)
-    logger.info(f"🎙️ Transcription received: '{transcription}'")
+    # Initialize session and text normalizations
+    session = get_session("default_session")
+    current_context = session.get("context")
+    pending_action = session.get("pending_action")
 
-    if not transcription:
-        msg = "No audio or speech detected."
-        logger.warning(msg)
-        audio_wav = generate_piper_tts_bytes(msg)
-        headers = {
-            "X-Server-Status": "ignored",
-            "X-Transcription": "",
-            "X-Requires-Followup": "false",
-            "X-Cmd-Output": msg
-        }
-        return Response(content=audio_wav, media_type="audio/wav", headers=headers)
+    # Determine which Vosk model to use based on pending command configuration
+    target_vosk_path = None
+    if current_context == "awaiting_prompt" and pending_action:
+        intent_config = INTENTS_CONFIG.get(pending_action, {})
+        logger.info(f"DEBUG ---> current_context = {current_context} | pending_action = {pending_action}")
+        target_vosk_path = intent_config.get("vosk_model_path")
+        logger.info(f"DEBUG ---> Target Vosk path retrieved: {target_vosk_path}")
 
-    session_id = "default_session"
-    session = get_session(session_id)
+    active_vosk_model = get_vosk_model(target_vosk_path)
+
+    # Transcribe audio
+    transcription, err_msg = process_incoming_audio(audio_bytes, active_vosk_model)
+    if err_msg:
+        logger.warning(err_msg)
+        return create_system_response("ignored", "", "false", err_msg)
+    
     text_lower = transcription.lower()
 
-    # --- 1. HANDLE ACTIVE SESSION CONTEXTS ---
+    # State Dispatcher (Route based on current session context)
+    if current_context == "awaiting_confirmation":
+        return handle_awaiting_confirmation(session, transcription, text_lower)
+    elif current_context == "awaiting_prompt":
+        return handle_awaiting_prompt(session, transcription, text_lower)
+    elif current_context == "awaiting_list_selection":
+        return handle_awaiting_list_selection(session, transcription, text_lower)
 
-    # A) Awaiting Confirmation for a Direct Command
-    if session["context"] == "awaiting_confirmation":
-        pending_cmd = session["pending_action"]
-        session["context"] = None
-        session["pending_action"] = None
-
-        valid_confirmation_words = config_data.get("settings", {}).get(
-            "confirmation_words", ["sure", "ok"]
-        )
-
-        logger.info(f"🔍 DEBUG -> Valided words loaded: {valid_confirmation_words} | Transcripción recibida: '{text_lower}'")
-
-        if any(w in text_lower for w in valid_confirmation_words):
-            logger.info(f"✅ Confirmation accepted for direct command: {pending_cmd}")
-            exec_params = {} # Direct commands have no dynamic arguments
-            
-            # --- COMMON EXECUTION & FORMATTING BLOCK ---
-            exec_res = call_host_broker(pending_cmd, params=exec_params)
-            logger.info(f"🔍 DEBUG HOST_RES -> {exec_res}")
-            intent_data = INTENTS_CONFIG.get(pending_cmd, {})
-            success_msg = intent_data.get("success_message", "Command executed successfully.")
-            host_output = exec_res.get("output", "")
-            cmd_out = host_output if (host_output and host_output.strip() != "") else success_msg
-
-            # 1. Apply Formatter
-            formatter_name = intent_data.get("formatter")
-            if formatter_name and hasattr(formatters, formatter_name):
-                formatter_func = getattr(formatters, formatter_name)
-                cmd_out_header = str(formatter_func(cmd_out)).replace("\n", " ").replace("\r", "")
-            else:
-                cmd_out_header = sanitize_header(cmd_out)
-            
-            # Check if there is a followup next_action
-            next_action = intent_data.get("next_action")
-            requires_followup_header = "false"
-            
-            if next_action:
-                session["context"] = "awaiting_confirmation"
-                session["pending_action"] = next_action
-                requires_followup_header = "true"
-                
-                next_intent_data = INTENTS_CONFIG.get(next_action, {})
-                followup_prompt = next_intent_data.get("confirmation_prompt", "Do you want to continue?")
-                success_msg = f"{success_msg}. {followup_prompt}"
-
-                cmd_out_header = f"{cmd_out_header} | {followup_prompt}"
-
-            # 2. Determine Speech Payload (TTS Output Config)
-            should_speak_output = intent_data.get("tts_output", False)
-            speech_text = cmd_out_header if should_speak_output else success_msg
-
-            logger.info(f"🔊 Generating TTS audio (speaking output: {should_speak_output})")
-            audio_wav = generate_piper_tts_bytes(speech_text)
-            headers = {
-                "X-Server-Status": "success",
-                "X-Transcription": sanitize_header(success_msg),
-                "X-Requires-Followup": requires_followup_header,
-                "X-Cmd-Output": cmd_out_header
-            }
-            return Response(content=audio_wav, media_type="audio/wav", headers=headers)
-        else:
-            logger.info("❌ Action cancelled by user.")
-            cancel_msg = config_data.get("settings", {}).get("cancel_message", "Action cancelled.")
-            audio_wav = generate_piper_tts_bytes(cancel_msg)
-            headers = {
-                "X-Server-Status": "cancelled",
-                "X-Transcription": sanitize_header(cancel_msg),
-                "X-Requires-Followup": "false",
-                "X-Cmd-Output": sanitize_header(cancel_msg)
-            }
-            return Response(content=audio_wav, media_type="audio/wav", headers=headers)
-
-    # B) Awaiting Dynamic Prompt Input (Captures voice as <argument>)
-    elif session["context"] == "awaiting_prompt":
-        pending_cmd = session["pending_action"]
-        session["context"] = None
-        session["pending_action"] = None
-
-        user_argument = transcription
-        logger.info(f"🤖 Executing prompt_input command '{pending_cmd}' with argument: '{user_argument}'")
-        exec_params = {"argument": user_argument}
-
-        # --- COMMON EXECUTION & FORMATTING BLOCK ---
-        exec_res = call_host_broker(pending_cmd, params=exec_params)
-        intent_data = INTENTS_CONFIG.get(pending_cmd, {})
-        success_msg = intent_data.get("success_message", "Command executed successfully.")
-        host_output = exec_res.get("output", "")
-        cmd_out = host_output if (host_output and host_output.strip() != "") else success_msg
-
-        # 1. Apply Formatter
-        formatter_name = intent_data.get("formatter")
-        if formatter_name and hasattr(formatters, formatter_name):
-            formatter_func = getattr(formatters, formatter_name)
-            cmd_out_header = str(formatter_func(cmd_out)).replace("\n", " ").replace("\r", "")
-        else:
-            cmd_out_header = sanitize_header(cmd_out)
-
-        # 2. Determine Speech Payload (TTS Output Config)
-        should_speak_output = intent_data.get("tts_output", False)
-        speech_text = cmd_out_header if should_speak_output else success_msg
-
-        logger.info(f"🔊 Generating TTS audio (speaking output: {should_speak_output})")
-        audio_wav = generate_piper_tts_bytes(speech_text)
-        headers = {
-            "X-Server-Status": "success",
-            "X-Transcription": sanitize_header(success_msg),
-            "X-Requires-Followup": "false",
-            "X-Cmd-Output": cmd_out_header
-        }
-        return Response(content=audio_wav, media_type="audio/wav", headers=headers)
-
-    # --- 2. MATCH NEW INTENT FROM TRANSCRIPTION ---
+    # MATCH NEW INTENT FROM TRANSCRIPTION
     user_emb = nlp_model.encode(transcription, convert_to_tensor=True)
     scores = util.cos_sim(user_emb, PHRASE_EMBEDDINGS)[0]
     best_idx = scores.argmax().item()
@@ -347,103 +496,12 @@ async def process_audio(request: Request):
     if best_score > 0.50:
         cmd_key = INTENT_MAP[best_idx]
         intent_data = INTENTS_CONFIG[cmd_key]
-        
-        cmd_type = intent_data.get("type", "direct")
-        requires_conf = intent_data.get("requires_confirmation", True)
+        return handle_command_intent(session, cmd_key, intent_data)
 
-        # CASE 1: Command requires a dynamic prompt input (e.g. Ollama with <argument>)
-        if cmd_type == "prompt_input":
-            session["context"] = "awaiting_prompt"
-            session["pending_action"] = cmd_key
-            
-            prompt_msg = intent_data.get("confirmation_prompt", "What do you want to ask?")
-            logger.info(f"🎙️ Prompt-input intent detected: {cmd_key}. Requesting argument...")
-
-            audio_wav = generate_piper_tts_bytes(prompt_msg)
-            headers = {
-                "X-Server-Status": "awaiting_prompt",
-                "X-Transcription": sanitize_header(prompt_msg),
-                "X-Requires-Followup": "true",
-                "X-Cmd-Output": sanitize_header(prompt_msg)
-            }
-            return Response(content=audio_wav, media_type="audio/wav", headers=headers)
-
-        # CASE 2: Direct Command WITH Confirmation Required
-        elif cmd_type == "direct" and requires_conf:
-            session["context"] = "awaiting_confirmation"
-            session["pending_action"] = cmd_key
-
-            conf_prompt = intent_data.get("confirmation_prompt", f"Do you want to execute {cmd_key}?")
-            logger.info(f"🔒 Direct intent with confirmation detected: {cmd_key}.")
-
-            audio_wav = generate_piper_tts_bytes(conf_prompt)
-            headers = {
-                "X-Server-Status": "awaiting_confirmation",
-                "X-Transcription": sanitize_header(conf_prompt),
-                "X-Requires-Followup": "true",
-                "X-Cmd-Output": sanitize_header(conf_prompt)
-            }
-            return Response(content=audio_wav, media_type="audio/wav", headers=headers)
-
-        # CASE 3: Direct Command WITHOUT Confirmation (Execute immediately)
-        elif cmd_type == "direct" and not requires_conf:
-            logger.info(f"⚡ Direct intent without confirmation. Executing immediately: {cmd_key}")
-            exec_params = {}
-
-            # --- COMMON EXECUTION & FORMATTING BLOCK ---
-            exec_res = call_host_broker(cmd_key, params=exec_params)
-            success_msg = intent_data.get("success_message", "Command executed successfully.")
-            host_output = exec_res.get("output", "")
-            cmd_out = host_output if (host_output and host_output.strip() != "") else success_msg
-
-            formatter_name = intent_data.get("formatter")
-            if formatter_name and hasattr(formatters, formatter_name):
-                formatter_func = getattr(formatters, formatter_name)
-                cmd_out_header = str(formatter_func(cmd_out)).replace("\n", " ").replace("\r", "")
-            else:
-                cmd_out_header = sanitize_header(cmd_out)
-
-            next_action = intent_data.get("next_action")
-            requires_followup_header = "false"
-            
-            # Check if there is a followup next_action
-            if next_action:
-                session["context"] = "awaiting_confirmation"
-                session["pending_action"] = next_action
-                requires_followup_header = "true"
-                
-                next_intent_data = INTENTS_CONFIG.get(next_action, {})
-                followup_prompt = next_intent_data.get("confirmation_prompt", "Do you want to continue?")
-                success_msg = f"{success_msg}. {followup_prompt}"
-
-                cmd_out_header = f"{cmd_out_header} | {followup_prompt}"
-
-            # 2. Determine Speech Payload
-            should_speak_output = intent_data.get("tts_output", False)
-            speech_text = cmd_out_header if should_speak_output else success_msg
-
-            audio_wav = generate_piper_tts_bytes(success_msg)
-            headers = {
-                "X-Server-Status": "success",
-                "X-Transcription": sanitize_header(success_msg),
-                "X-Requires-Followup": requires_followup_header,
-                "X-Cmd-Output": cmd_out_header
-            }
-            return Response(content=audio_wav, media_type="audio/wav", headers=headers)
-
-    # --- 3. UNKNOWN INTENT FALLBACK ---
-    unknown_msg = config_data.get("settings", {}).get(
-        "unknown_message", "I did not understand what you wanted me to do."
-    )
+    # UNKNOWN INTENT FALLBACK
+    unknown_msg = config_data.get("settings", {}).get("unknown_message", "I did not understand what you wanted me to do.")
     logger.warning(f"Unrecognized intent from transcription: '{transcription}'")
-    audio_wav = generate_piper_tts_bytes(unknown_msg)
-    headers = {
-        "X-Server-Status": "unknown_intent",
-        "X-Transcription": sanitize_header(unknown_msg),
-        "X-Requires-Followup": "false",
-        "X-Cmd-Output": "Command not recognized."
-    }
-    return Response(content=audio_wav, media_type="audio/wav", headers=headers)
+    return create_system_response("unknown_intent", unknown_msg, "false", "Command not recognized.")
 
 if __name__ == "__main__":
     import uvicorn
