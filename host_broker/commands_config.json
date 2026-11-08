@@ -1,4 +1,12 @@
-{
+{ 
+  "download_torrent": {
+    "description": "Download torrent",
+    "command": "ssh pi@192.168.1.20 'sudo docker exec transmission transmission-remote -n casaos:casaos -a \"{argument}\"'"   
+   },
+  "check_today_weather": {
+      "description": "Obtain weather forecast in spanish",
+      "command": "CURRENT_TIME=$(date +'%H:%M'); CURRENT_DATE=$(date +'%A, %d de %B de %Y'); python3 /home/orangepi/projects/daily-weather-forecast/obtain_today_weather_by_city.py 'San Diego' | ollama run gemma2:2b \"Hoy es $CURRENT_DATE y son exactamente las $CURRENT_TIME. Basándote en el siguiente pronóstico, redacta un único enunciado largo y descriptivo enfocado exclusivamente en el resto del día respondiendo con precisión a tres puntos clave: 1) Si va a llover o no, 2) Qué tipo de lluvia se espera, y 3) A qué horas exactas se pronostican dichas precipitaciones. Pronóstico: \""
+  },
   "check_ram": {
     "description": "Check available system RAM",
     "command": "free -h"
