@@ -6,9 +6,29 @@
     "confirmation_words": ["si", "sí", "hazlo", "confirmo"],
     "sucess_message": "Accion executada exitosamente.",
     "cancel_message": "Accion cancelada.",
-    "unknown_message": "No entendí lo que querías que hiciera."
+    "unknown_message": "No entendí lo que querías que hiciera.",
+    "word_to_num": {
+    "primero": "1", "uno": "1",
+    "segundo": "2", "dos": "2",
+    "tercero": "3", "tres": "3",
+    "cuarto": "4", "cuatro": "4"
+  }
   },
   "commands": {
+    "search_piratebay_torrent": {
+      "phrases": ["Buscar torrents", "Torrents en piratebay"],
+      "type": "prompt_input",
+      "confirmation_prompt": "¿Deseas buscar torrents en pirate bay? ¿Qué deseas buscar?",
+      "success_message": "Aqui estan los resultados de torrents encontrados. ¿Cual deseas descargar?",
+      "output_type": "indexed_hash",
+      "requires_confirmation": true,
+      "tts_output": false,
+      "vosk_model_path": "/app/models/vosk-en",
+      "selection_action": "download_torrent"
+    },
+    "download_torrent": {
+      "success_message": "Descarga de torrent iniciada con éxito." 
+    },
     "check_ram": {
       "phrases": ["checar ram", "uso de memoria", "cuanta memoria tengo", "uso de ram"],
       "formatter": "format_memory_status",
