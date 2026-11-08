@@ -6,7 +6,7 @@
     "confirmation_words": ["yes", "do it", "confirm"],
     "sucess_message": "Action successfully executed.",
     "cancel_message": "Action Cancelled.",
-    "unknow_message": "I did not understand what you wanted me to do."
+    "unknow_message": "I did not understand what you wanted me to do.",
     "word_to_num": {
     "first": "1", "one": "1",
     "second": "2", "two": "2",
